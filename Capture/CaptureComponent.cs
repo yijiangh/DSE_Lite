@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using Grasshopper;
@@ -29,11 +30,12 @@ namespace Capture
         {
             this.VarsList = new List<DSEVariable>();
             this.ObjInput = new List<double>();
-            this.PropInput = new List<double>();
+            this.PropInput = new List<IConvertible>();
             this.SlidersList = new List<GH_NumberSlider>();
+
             this.DesignMap = new List<List<double>>();
             this.ObjValues = new List<List<double>>();   
-            this.PropertyValues = new List<List<double>>();
+            this.PropertyValues = new List<List<IConvertible>>();
             this.FirstRead = true;
         }
 
@@ -46,8 +48,10 @@ namespace Capture
         public List<List<double>> DesignMap;
         public enum CaptureMode {SaveCSV, SaveScreenshot, Both, Neither };
         public CaptureMode Mode;
-        public List<double> PropInput;
-        public List<List<double>> PropertyValues;
+
+        public List<IConvertible> PropInput;
+        public List<List<IConvertible>> PropertyValues;
+
         public string SSDir;
         public string SSFilename;
         public string CSVDir;
@@ -74,13 +78,14 @@ namespace Capture
             pManager.AddNumberParameter("Variables", "Var", "Sliders representing variables", GH_ParamAccess.list);
             pManager.AddNumberParameter("Objectives", "Obj", "One or more performance objectives", GH_ParamAccess.list);
             pManager.AddIntegerParameter("Mode", "M", "Sampling Type. Right click to choose type.", GH_ParamAccess.item, 0);
-            pManager.AddNumberParameter("Properties", "Prop", "One or more numerical properties to record", GH_ParamAccess.list, 0.0);
+            pManager.AddGenericParameter("Properties", "Prop", "One or more numerical properties to record", GH_ParamAccess.list);
             pManager.AddNumberParameter("Design map", "DM", "Set of design variable settings to capture", GH_ParamAccess.tree);
             pManager.AddTextParameter(".csv filename", ".csv F", "Prefix for output files. Example: 'all-data'", GH_ParamAccess.item);
             pManager.AddTextParameter(".csv directory", ".csv Dir", @"Output path. Example: 'C:\Folder or C:\Folder\", GH_ParamAccess.item, "None");
             pManager.AddTextParameter("Screenshot filename", "SS F", "Prefix for output files. Example: 'design'", GH_ParamAccess.item);
             pManager.AddTextParameter("Screenshot directory", "SS Dir", @"Output path. Example: 'C:\Folder or C:\Folder\", GH_ParamAccess.item, "None");
-            pManager.AddIntegerParameter("Backup Frequency", "SaveFreq", "If a number is provided, Capture will write progress backup files every 'SaveFreq' iterations", GH_ParamAccess.item, 0);
+            pManager.AddIntegerParameter("Backup Frequency", "SaveFreq", 
+                "If a number is provided, Capture will write progress backup files every 'SaveFreq' iterations", GH_ParamAccess.item, 0);
 
             // Add possible values for the mode input
             Param_Integer param = (Param_Integer)pManager[2];
@@ -125,12 +130,14 @@ namespace Capture
             int mode = 0;
             if (!DA.GetData(2, ref mode)) return;
             this.Mode = (CaptureMode)mode;
-            //if (!DA.GetDataList<double>(3, this.PropInput)) return;
 
+            //if (!DA.GetDataList<double>(3, this.PropInput)) return;
             DA.GetDataList(3, this.PropInput);
 
             var map = new GH_Structure<GH_Number>();
             if (!DA.GetDataTree(4, out map)) return;
+
+            // convert from GHDataTree to list of lists
             this.DesignMap = StructureToListOfLists(map);
             if (FirstRead)
             {
@@ -151,6 +158,7 @@ namespace Capture
             DA.GetData(9, ref SaveFreq);
 
             // Make sure directories can be accepted with or without slashes
+            // TODO create directory if not exist already
 
             // Make sure there is backslash on directory
             char lastc = CSVDir[CSVDir.Length - 1];
@@ -189,15 +197,11 @@ namespace Capture
             {
                     this.AddRuntimeMessage((GH_RuntimeMessageLevel)20, "Number of sliders and design map do not match; please check");
             }
-            
-
-
-
 
             if (Iterating)
             {
                 List<double> o = new List<double>();
-                List<double> p = new List<double>();
+                List<IConvertible> p = new List<IConvertible>();
                 if (!DA.GetDataList(1, o)) { return; }
                 if (!DA.GetDataList(3, p)) { return; }
 
@@ -217,7 +221,7 @@ namespace Capture
             if (!Iterating)
             {
                 DA.SetDataTree(0, AssembleDMOTree(this.DesignMap, this.ObjValues));
-                DA.SetDataTree(1, ListOfListsToTree<double>(this.PropertyValues));
+                DA.SetDataTree(1, ListOfListsToTree<IConvertible>(this.PropertyValues));
                 DA.SetData(2, DataWritten);
                 DA.SetData(3, ImagesWritten);
             }

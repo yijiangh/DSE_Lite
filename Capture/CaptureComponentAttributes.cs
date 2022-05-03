@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -26,7 +27,7 @@ namespace Capture
         {
             // Reset list of objective values
             MyComponent.ObjValues = new List<List<double>>();
-            MyComponent.PropertyValues = new List<List<double>>();
+            MyComponent.PropertyValues = new List<List<IConvertible>>();
             MyComponent.FirstRead = true;
             MyComponent.Iterating = true;
             this.Iterate();
@@ -38,7 +39,23 @@ namespace Capture
 
         private void Iterate()
         {
+            if (MyComponent.Mode == CaptureComponent.CaptureMode.SaveScreenshot || MyComponent.Mode == CaptureComponent.CaptureMode.Both)
+            {
+                if (!File.Exists(MyComponent.SSDir))
+                {
+                    Directory.CreateDirectory(MyComponent.SSDir);
+                }
+            }
+            if (MyComponent.Mode == CaptureComponent.CaptureMode.SaveCSV || MyComponent.Mode == CaptureComponent.CaptureMode.Both)
+            {
+                if (!File.Exists(MyComponent.CSVDir))
+                {
+                    Directory.CreateDirectory(MyComponent.CSVDir);
+                }
+            }
+
             int i = 1;
+            int total_num = MyComponent.DesignMap.Count;
 
             MyComponent.Index = i;
 
@@ -58,7 +75,7 @@ namespace Capture
                     }
 
                     BeforeScreenShots();
-                    ScreenShot(i);
+                    ScreenShot(i, total_num);
                     AfterScreenShots();
                     MyComponent.ImagesWritten = "Yes";
                 }
@@ -71,7 +88,8 @@ namespace Capture
                     {
                         if (i % MyComponent.SaveFreq == 0)
                         {
-                            WriteProgressToFile(MyComponent.AssembleDMO(MyComponent.DesignMap, MyComponent.ObjValues), MyComponent.CSVDir, MyComponent.CSVFilename, ".csv", i);
+                            WriteProgressToFile(MyComponent.AssembleDMO(MyComponent.DesignMap, MyComponent.ObjValues), 
+                                MyComponent.CSVDir, MyComponent.CSVFilename, ".csv", i);
                             int Last = i - MyComponent.SaveFreq;
                             System.IO.File.Delete(MyComponent.CSVDir + MyComponent.CSVFilename + "_progress_" + Last.ToString() + ".csv");
                         }
@@ -81,12 +99,11 @@ namespace Capture
                     i++;
             }
 
-            
-
             // If we're saving a CSV, this happens here.
             if (MyComponent.Mode == CaptureComponent.CaptureMode.SaveCSV || MyComponent.Mode == CaptureComponent.CaptureMode.Both)
             {
-                WriteOutputToFile(MyComponent.AssembleDMO(MyComponent.DesignMap, MyComponent.ObjValues), MyComponent.CSVDir, MyComponent.CSVFilename, ".csv");
+                WriteOutputToFile(MyComponent.AssembleDMO(MyComponent.DesignMap, MyComponent.ObjValues), MyComponent.PropertyValues,
+                    MyComponent.CSVDir, MyComponent.CSVFilename, ".csv");
                 MyComponent.DataWritten = "Yes";
 
                 if (MyComponent.CSVDir == "None")
@@ -95,9 +112,6 @@ namespace Capture
                 }
 
             }
-
-           
-
         }
 
         private Color currentColor;
@@ -128,7 +142,7 @@ namespace Capture
             Rhino.RhinoDoc.ActiveDoc.Views.ActiveView.ActiveViewport.WorldAxesVisible = worldAxes;
         }
 
-        private void ScreenShot(int i)
+        private void ScreenShot(int i, int total_num)
         {
             Rhino.RhinoDoc.ActiveDoc.Views.Redraw();
             Rhino.Display.RhinoView view = Rhino.RhinoDoc.ActiveDoc.Views.ActiveView;
@@ -137,7 +151,9 @@ namespace Capture
                 return;
             }
 
-            string fileName = @"" + MyComponent.SSDir + MyComponent.SSFilename + "-" + i + ".png";
+            // add zero paddings in front of the index (useful when listing images as a sequence)
+            string fileName = @"" + MyComponent.SSDir + MyComponent.SSFilename + "-" + i.ToString("D" + total_num) + ".png";
+            // TODO let user specify resolutions
             Bitmap image = view.CaptureToBitmap();
 
             if (image == null)
@@ -149,20 +165,24 @@ namespace Capture
             image = null;
         }
 
-        private void WriteOutputToFile(List<List<double>> output, string path, string filename, string extension)
+        private void WriteOutputToFile(List<List<double>> num_output, List<List<IConvertible>> generic_output, string path, string filename, string extension)
         {
+            if (num_output.Count != generic_output.Count) throw new Exception("Output dimensions not equal!");
 
             using (System.IO.StreamWriter file = new System.IO.StreamWriter(@"" + path + filename + extension))
             {
-                for (int i = 0; i < output.Count; i++)
+                for (int i = 0; i < num_output.Count; i++)
                 {
                     string b = null;
-                    for (int j = 0; j < output[i].Count - 1; j++)
+                    for (int j = 0; j < num_output[i].Count; j++)
                     {
-                        b = b + output[i][j] + ",";
+                        b = b + num_output[i][j] + ",";
                     }
-
-                    b = b + output[i][output[i].Count - 1];
+                    for (int j = 0; j < generic_output[i].Count - 1; j++)
+                    {
+                        b = b + generic_output[i][j] + ",";
+                    }
+                    b = b + generic_output[i][generic_output[i].Count - 1];
 
                     file.WriteLine(b);
                 }
