@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 
 using Grasshopper;
@@ -39,7 +40,7 @@ namespace Sampler
         public SamplerUtilities Util;
         public List<List<double>> Output;
         public Random MyRand;
-        public string FilesWritten;
+        public string FilesWritten = "File not written";
 
         /// <summary>
         /// Creates custom attributes for this component.
@@ -58,10 +59,11 @@ namespace Sampler
             pManager.AddNumberParameter("Variables", "Var", "Variables to be sampled", GH_ParamAccess.list);
             pManager.AddIntegerParameter("Samples", "N", "Number of samples", GH_ParamAccess.item);
             pManager.AddIntegerParameter("Type", "T", "Sampling Type. Right click to choose type.", GH_ParamAccess.item, 0);
-            pManager.AddIntegerParameter("Seed", "S", "Random Seed. Integer 0 will leave the seed unspecified.", GH_ParamAccess.item);
-            if (this.Seed != 0) { this.MyRand = new Random(this.Seed); }
+            pManager.AddIntegerParameter("Seed", "S", "Random Seed. Integer 0 will leave the seed unspecified.", GH_ParamAccess.item, 123);
+            //if (this.Seed != 0) { this.MyRand = new Random(this.Seed); }
             pManager.AddTextParameter("Filename", "F", "Filename for output .csv file. Example: 'Samples'", GH_ParamAccess.item);
-            pManager.AddTextParameter("Directory", "Dir", @"Output directory for .csv file. Example: 'C:\Folder or C:\Folder\", GH_ParamAccess.item, "None");
+            pManager.AddTextParameter("Directory", "Dir", @"Output directory for .csv file. Example: 'C:\Folder or C:\Folder\", 
+                GH_ParamAccess.item, "None");
 
             // TODO: Add feature to check whether user included \ at the end of path.  If yes, do nothing, if not, add \.
             // or change to just path with filename
@@ -113,8 +115,6 @@ namespace Sampler
             {
                 Dir = @Dir + @"\";
             }
-
-
             // We should now validate the data and warn the user if invalid data is supplied.
 
             DA.SetDataTree(0, GHUtilities.ListOfListsToTree<double>(this.Output));

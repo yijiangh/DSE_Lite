@@ -1,12 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using Grasshopper;
 using Grasshopper.Kernel;
-using Grasshopper.Kernel.Data;
-using Rhino.Geometry;
 using DSECommon;
 using System.Drawing;
 
@@ -26,7 +21,9 @@ namespace Capture
         public override Grasshopper.GUI.Canvas.GH_ObjectResponse RespondToMouseDoubleClick(Grasshopper.GUI.Canvas.GH_Canvas sender, Grasshopper.GUI.GH_CanvasMouseEvent e)
         {
             // Reset list of objective values
-            MyComponent.ObjValues = new List<List<double>>();
+            MyComponent.DataWritten = "Data not written";
+            MyComponent.ImagesWritten = "Image not written";
+            MyComponent.ObjValues      = new List<List<double>>();
             MyComponent.PropertyValues = new List<List<IConvertible>>();
             MyComponent.FirstRead = true;
             MyComponent.Iterating = true;
@@ -39,45 +36,52 @@ namespace Capture
 
         private void Iterate()
         {
+            // Create directories if not existed yet
             if (MyComponent.Mode == CaptureComponent.CaptureMode.SaveScreenshot || MyComponent.Mode == CaptureComponent.CaptureMode.Both)
             {
-                if (!File.Exists(MyComponent.SSDir))
+                if (!Directory.Exists(MyComponent.SSDir))
                 {
-                    Directory.CreateDirectory(MyComponent.SSDir);
+                    try
+                    {
+                        Directory.CreateDirectory(MyComponent.SSDir);
+                    }
+                    catch (Exception e)
+                    {
+                        MyComponent.AddRuntimeMessage((GH_RuntimeMessageLevel)20, e.ToString());
+                        throw e;
+                    }
                 }
             }
             if (MyComponent.Mode == CaptureComponent.CaptureMode.SaveCSV || MyComponent.Mode == CaptureComponent.CaptureMode.Both)
             {
-                if (!File.Exists(MyComponent.CSVDir))
+                if (!Directory.Exists(MyComponent.CSVDir))
                 {
-                    Directory.CreateDirectory(MyComponent.CSVDir);
+                    try
+                    {
+                        Directory.CreateDirectory(MyComponent.CSVDir);
+                    }
+                    catch (Exception e)
+                    {
+                        MyComponent.AddRuntimeMessage((GH_RuntimeMessageLevel)20, e.ToString());
+                        throw e;
+                    }
                 }
             }
 
             int i = 1;
             int total_num = MyComponent.DesignMap.Count;
 
-            MyComponent.Index = i;
-
             foreach (List<double> sample in MyComponent.DesignMap)
             {
+                // Trigger Sliders change
                 GHUtilities.ChangeSliders(MyComponent.SlidersList, sample);
 
-                MyComponent.Index = i;
                 // If we're taking screen shots, this happens here.
-
                 if (MyComponent.Mode == CaptureComponent.CaptureMode.SaveScreenshot || MyComponent.Mode == CaptureComponent.CaptureMode.Both)
                 {
-
-                    if (MyComponent.SSDir == "None")
-                    {
-                        throw new Exception("No screenshot directory given! Please add valid directory");
-                    }
-
                     BeforeScreenShots();
                     ScreenShot(i, total_num);
                     AfterScreenShots();
-                    MyComponent.ImagesWritten = "Yes";
                 }
 
                 // Write intermediate Screenshots
@@ -88,15 +92,14 @@ namespace Capture
                     {
                         if (i % MyComponent.SaveFreq == 0)
                         {
-                            WriteProgressToFile(MyComponent.AssembleDMO(MyComponent.DesignMap, MyComponent.ObjValues), 
-                                MyComponent.CSVDir, MyComponent.CSVFilename, ".csv", i);
+                            WriteOutputToFile(MyComponent.AssembleDMO(MyComponent.DesignMap, MyComponent.ObjValues), MyComponent.PropertyValues,
+                                MyComponent.CSVDir, MyComponent.CSVFilename, ".csv", progress_i: i);
                             int Last = i - MyComponent.SaveFreq;
                             System.IO.File.Delete(MyComponent.CSVDir + MyComponent.CSVFilename + "_progress_" + Last.ToString() + ".csv");
                         }
                     }
                 }
-
-                    i++;
+                i++;
             }
 
             // If we're saving a CSV, this happens here.
@@ -104,13 +107,6 @@ namespace Capture
             {
                 WriteOutputToFile(MyComponent.AssembleDMO(MyComponent.DesignMap, MyComponent.ObjValues), MyComponent.PropertyValues,
                     MyComponent.CSVDir, MyComponent.CSVFilename, ".csv");
-                MyComponent.DataWritten = "Yes";
-
-                if (MyComponent.CSVDir == "None")
-                {
-                    throw new Exception("No CSV directory given! Please add valid directory");
-                }
-
             }
         }
 
@@ -151,8 +147,18 @@ namespace Capture
                 return;
             }
 
+            if (!Directory.Exists(MyComponent.SSDir))
+            {
+                MyComponent.AddRuntimeMessage((GH_RuntimeMessageLevel)20, "No valid screenshot directory exists:" + MyComponent.SSDir + ". Please add valid directory");
+                //throw new Exception("No valid screenshot directory exists:" + MyComponent.SSDir + ". Please add valid directory");
+            }
+
             // add zero paddings in front of the index (useful when listing images as a sequence)
-            string fileName = @"" + MyComponent.SSDir + MyComponent.SSFilename + "-" + i.ToString("D" + total_num) + ".png";
+            //string fileName = @"" + MyComponent.SSDir + MyComponent.SSFilename + "-" + 
+            //    i.ToString("D" + total_num.ToString().Length) + ".png";
+            string fileName = Path.Combine(MyComponent.SSDir, MyComponent.SSFilename + "-" +
+                i.ToString("D" + total_num.ToString().Length) + ".png");
+
             // TODO let user specify resolutions
             Bitmap image = view.CaptureToBitmap();
 
@@ -163,15 +169,27 @@ namespace Capture
 
             image.Save(fileName);
             image = null;
+            MyComponent.ImagesWritten = "Image written to " + fileName;
         }
 
-        private void WriteOutputToFile(List<List<double>> num_output, List<List<IConvertible>> generic_output, string path, string filename, string extension)
+        private void WriteOutputToFile(List<List<double>> num_output, List<List<IConvertible>> generic_output, string path, string filename, string extension, 
+                int progress_i=-1)
         {
-            if (num_output.Count != generic_output.Count) throw new Exception("Output dimensions not equal!");
+            string file_suffix = progress_i >= 0 ? "_progress_" + progress_i.ToString() : "";
+            string csv_filepath = Path.Combine(path, filename + file_suffix + extension);
+                // @"" + path + filename + file_suffix + extension;
 
-            using (System.IO.StreamWriter file = new System.IO.StreamWriter(@"" + path + filename + extension))
+            if (!Directory.Exists(path))
             {
-                for (int i = 0; i < num_output.Count; i++)
+                MyComponent.AddRuntimeMessage((GH_RuntimeMessageLevel)20,
+                    "No valid directory exists for saving CSV files:" + path + ". Please add valid directory");
+                //throw new Exception("No valid directory exists for saving CSV files:" + path + ". Please add valid directory");
+            }
+
+            using (System.IO.StreamWriter file = new System.IO.StreamWriter(csv_filepath))
+            {
+                // number outputs is gathered before properties are gathered when saving intermediate results
+                for (int i = 0; i < generic_output.Count; i++)
                 {
                     string b = null;
                     for (int j = 0; j < num_output[i].Count; j++)
@@ -186,27 +204,8 @@ namespace Capture
 
                     file.WriteLine(b);
                 }
-
             }
-        }
-
-        private void WriteProgressToFile(List<List<double>> output, string path, string filename, string extension, int count)
-        {
-            using (System.IO.StreamWriter file = new System.IO.StreamWriter(@"" + path + filename + "_progress_" + count.ToString() + extension))
-            {
-                for (int i = 0; i < output.Count; i++)
-                {
-                    string b = null;
-                    for (int j = 0; j < output[i].Count - 1; j++)
-                    {
-                        b = b + output[i][j] + ",";
-                    }
-
-                    b = b + output[i][output[i].Count - 1];
-
-                    file.WriteLine(b);
-                }
-            }
+            MyComponent.DataWritten = "Data written to " + csv_filepath;
         }
 
     }

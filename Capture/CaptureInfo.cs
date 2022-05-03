@@ -10,7 +10,7 @@ namespace Capture
         {
             get
             {
-                return "Capture";
+                return "Capture2";
             }
         }
         public override Bitmap Icon

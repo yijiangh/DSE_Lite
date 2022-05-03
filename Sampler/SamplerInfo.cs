@@ -10,7 +10,7 @@ namespace Sampler
         {
             get
             {
-                return "Sampler";
+                return "Sampler2";
             }
         }
         public override Bitmap Icon
